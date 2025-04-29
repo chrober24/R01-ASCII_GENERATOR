@@ -27,44 +27,74 @@ let globalAnimationSpeed = 0.01; // Speed control
 
 // UI Elements
 let sliders = {};
-let toggleButton; // <-- NEW
+let toggleButton;
+let screenshotButton;
+let notification;
+let isControlPanelVisible = false;
 
 function preload() {
-  customFont = loadFont('ASSETS/marathon_font.otf');
+  // Load font if available, otherwise use default
+  try {
+    customFont = loadFont('ASSETS/marathon_font.otf');
+  } catch (error) {
+    console.log('Custom font not loaded, using default font');
+    // The sketch will use default font
+  }
 }
 
 function setup() {
   container = select('#ascii-container');
-  canvas = createCanvas(container.width, container.height);
+  canvas = createCanvas(windowWidth, windowHeight);
   canvas.parent(container);
 
   colorMode(HSL, 360, 100, 100, 100);
-  textFont(customFont);
+  if (customFont) {
+    textFont(customFont);
+  }
   textAlign(CENTER, CENTER);
   noStroke();
-  background(0);
+  background(5); // Darker background for better contrast
 
   setupControls();
+  setupScreenshotButton();
   regenerateLayers();
   
-  canvas.mousePressed(randomizeAll);
-
-  // 🔲 Create toggle button
-  toggleButton = createButton('🛠️ Toggle Controls');
-  toggleButton.parent(container);
-  toggleButton.class('control-button');
-  toggleButton.style('position', 'absolute');
-  toggleButton.style('top', '10px');
-  toggleButton.style('left', '10px');
-  toggleButton.mousePressed(toggleControls);
+  // Canvas click will randomize the art
+  canvas.mousePressed(function() {
+    // Only randomize if clicked on canvas, not on controls
+    if (mouseX > 320 || mouseY > 100) {
+      randomizeAll();
+    }
+  });
+  
+  // Setup notification
+  notification = select('#screenshot-notification');
+  notification.style('transform', 'translateX(-50%) translateY(-100px)');
 }
 
 function draw() {
-  background(0, 50);
+  background(0, 50); // Darker background with fade
   
-  drawGridlines();
-
+  // Draw the art elements
+  layers.sort((a, b) => a.symbolSize - b.symbolSize);
+  for (let layer of layers) {
+    layer.update();
+    layer.display();
+  }
+  
+  // Draw subtle gridlines if panel is visible (for design reference)
+  if (isControlPanelVisible) {
+    drawGridlines();
+  }
+  
   // Update values live from sliders
+  updateValuesFromSliders();
+}
+
+function updateValuesFromSliders() {
+  // Only update if sliders exist
+  if (Object.keys(sliders).length === 0) return;
+  
   numLayers = sliders.numLayers.value();
   hueBase = sliders.hueBase.value();
   sat = sliders.sat.value();
@@ -84,24 +114,19 @@ function draw() {
   fadeSpeedMax = sliders.fadeSpeedMax.value();
 
   globalAnimationSpeed = sliders.globalAnimationSpeed.value();
-
-  layers.sort((a, b) => a.symbolSize - b.symbolSize);
-  for (let layer of layers) {
-    layer.update();
-    layer.display();
-  }
 }
 
 function windowResized() {
-  if (container) {
-    resizeCanvas(container.width, container.height);
-  }
+  resizeCanvas(windowWidth, windowHeight);
 }
 
 // 🔧 SETUP CONTROLS
 function setupControls() {
   const panel = select('#control-panel');
-  panel.class('control-panel');
+  
+  // Get toggle button from HTML
+  toggleButton = select('#toggleButton');
+  toggleButton.mousePressed(toggleControlPanel);
 
   sliders.numLayers = createControlGroup('General', panel, 'Layers', 2, 10, numLayers, 1);
 
@@ -128,23 +153,73 @@ function setupControls() {
   sliders.fadeSpeedMax = createControl(panel, 'Fade Speed Max', 0.002, 0.03, fadeSpeedMax, 0.001);
   sliders.globalAnimationSpeed = createControl(panel, 'Animation Speed', 0.001, 0.1, globalAnimationSpeed, 0.001);
 
-  let refreshButton = createButton('🔄 Refresh Layers');
-  refreshButton.parent(panel);
-  refreshButton.class('control-button');
+  // Create button container
+  let buttonContainer = createDiv();
+  buttonContainer.parent(panel);
+  buttonContainer.class('control-buttons');
+
+  // Add refresh button
+  let refreshButton = createButton('🔄 Refresh');
+  refreshButton.parent(buttonContainer);
+  refreshButton.class('button');
   refreshButton.mousePressed(regenerateLayers);
 
-  let randomizeButton = createButton('🎲 Randomize All');
-  randomizeButton.parent(panel);
-  randomizeButton.class('control-button');
+  // Add randomize button
+  let randomizeButton = createButton('🎲 Randomize');
+  randomizeButton.parent(buttonContainer);
+  randomizeButton.class('button');
   randomizeButton.mousePressed(randomizeAll);
-  // Create Toggle Button
-  let toggleButton = createButton('☰ Controls');
-  toggleButton.parent('ascii-container'); // <- attach to the main container, NOT the panel
-  toggleButton.class('toggle-button');    // <- add a class
-  toggleButton.mousePressed(() => {
-  panel.toggleClass('hidden');          // <- toggle the "hidden" class
-});
+}
 
+function setupScreenshotButton() {
+  // Get screenshot button from HTML
+  screenshotButton = select('#screenshotButton');
+  screenshotButton.mousePressed(takeScreenshot);
+}
+
+function takeScreenshot() {
+  // Hide controls temporarily for clean screenshot
+  const controlPanel = select('#control-panel');
+  const uiControls = select('.ui-controls');
+  
+  // Store visibility state
+  const wasPanelVisible = !controlPanel.hasClass('hidden');
+  
+  // Hide UI elements
+  controlPanel.addClass('hidden');
+  uiControls.style('display', 'none');
+  
+  // Wait a frame to ensure UI is hidden
+  setTimeout(() => {
+    // Take the screenshot
+    saveCanvas('ascii_art', 'png');
+    
+    // Show notification
+    notification.addClass('notification-visible');
+    
+    // Hide notification after 3 seconds
+    setTimeout(() => {
+      notification.removeClass('notification-visible');
+    }, 3000);
+    
+    // Restore UI elements
+    uiControls.style('display', 'flex');
+    if (wasPanelVisible) {
+      controlPanel.removeClass('hidden');
+    }
+  }, 100);
+}
+
+function toggleControlPanel() {
+  const panel = select('#control-panel');
+  panel.toggleClass('hidden');
+  isControlPanelVisible = !panel.hasClass('hidden');
+  
+  if (isControlPanelVisible) {
+    toggleButton.html('Hide Controls');
+  } else {
+    toggleButton.html('Show Controls');
+  }
 }
 
 function createTitle(title, parent) {
@@ -176,12 +251,12 @@ function createControl(parent, labelText, min, max, value, step) {
 
 function regenerateLayers() {
   layers = [];
-  for (let i = 0; i < sliders.numLayers.value(); i++) {
+  for (let i = 0; i < numLayers; i++) {
     layers.push(new ASCIILayer(i));
   }
 }
 
-// 🎲 RANDOMIZER FUNCTION (fixed version)
+// 🎲 RANDOMIZER FUNCTION
 function randomizeAll() {
   sliders.numLayers.value(int(random(2, 10)));
 
@@ -236,7 +311,7 @@ class ASCIILayer {
     this.seed = seed;
     this.t = random(1000);
 
-    this.depth = map(seed, 0, sliders.numLayers.value() - 1, 1.5, 0.5);
+    this.depth = map(seed, 0, numLayers - 1, 1.5, 0.5);
     this.symbolSize = random(symbolSizeMin, symbolSizeMax) * this.depth;
     this.scaleFactor = this.depth;
 
@@ -352,21 +427,11 @@ function adjustContrast(value, amount) {
 }
 
 function drawGridlines() {
-  stroke(100, 100, 100, 4); // Faint white gridlines with low opacity
+  stroke(100, 100, 100, 4); // Faint gridlines with low opacity
   for (let x = 0; x < width; x += symbolSizeMin) {
     line(x, 0, x, height);
   }
   for (let y = 0; y < height; y += symbolSizeMin) {
     line(0, y, width, y);
-  }
-}
-
-// ➡️ NEW FUNCTION
-function toggleControls() {
-  const panel = select('#control-panel');
-  if (panel.elt.style.display === 'none') {
-    panel.show();
-  } else {
-    panel.hide();
   }
 }
